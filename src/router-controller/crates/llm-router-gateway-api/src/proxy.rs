@@ -41,7 +41,7 @@ fn print_config(config: &RouterConfig) {
     debug!("{:#?}", config);
 }
 
-fn extract_forward_uri_path_and_query(req: &Request<Incoming>) -> Result<Uri, GatewayApiError> {
+fn extract_forward_uri_path_and_query<B>(req: &Request<B>) -> Result<Uri, GatewayApiError> {
     let uri = req
         .uri()
         .path_and_query()
@@ -345,10 +345,15 @@ pub async fn handler(
     }
 }
 
-pub async fn proxy(
-    req: Request<Incoming>,
+pub async fn proxy<B>(
+    req: Request<B>,
     config: RouterConfig,
-) -> Result<Response<BoxBody<Bytes, GatewayApiError>>, GatewayApiError> {
+) -> Result<Response<BoxBody<Bytes, GatewayApiError>>, GatewayApiError>
+where
+    B: hyper::body::Body + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     let overall_start = Instant::now();
     let mut model_selection_time = 0.0;
     let llm_resp_time_holder = Arc::new(Mutex::new(0.0));
@@ -364,13 +369,17 @@ pub async fn proxy(
         let (parts, body) = req.into_parts();
         info!("parts: {parts:#?}");
 
-        let body_bytes = body.collect().await?.to_bytes();
+        let body_bytes = body.collect().await.map_err(|e| GatewayApiError::InvalidRequest {
+            message: format!("Failed to read request body: {}", e.into()),
+        })?.to_bytes();
         info!("body_bytes: {body_bytes:#?}");
 
         let body_str = String::from_utf8_lossy(&body_bytes);
         info!("body_str: {:#?}", &body_str);
-        let json: Value = serde_json::from_str(&body_str).unwrap_or(Value::Null);
-        info!("json: {:#?}", &json);
+        let value: Value = serde_json::from_slice(&body_bytes).map_err(|e| GatewayApiError::InvalidRequest {
+            message: format!("Invalid JSON: {}", e),
+        })?;
+        info!("json: {:#?}", &value);
 
         let is_stream = if parts.method == Method::POST
             && parts
@@ -379,20 +388,20 @@ pub async fn proxy(
                 .and_then(|v| v.to_str().ok())
                 == Some("application/json")
         {
-            json["stream"].as_bool().unwrap_or(false)
+            value["stream"].as_bool().unwrap_or(false)
         } else {
             false
         };
         info!("is_stream: {is_stream:#?}");
 
-        let messages = extract_messages(&json).unwrap_or_default();
+        let messages = extract_messages(&value).unwrap_or_default();
         info!("messages: {:#?}", &messages);
         let text_input = convert_messages_to_text_input(&messages);
         info!("text_input: {:#?}", &text_input);
 
         let client = reqwest::Client::new();
 
-        let policy = if let Some(nim_llm_router_params) = extract_nim_llm_router_params(&json) {
+        let policy = if let Some(nim_llm_router_params) = extract_nim_llm_router_params(&value) {
             match config.get_policy_by_name(nim_llm_router_params.policy.as_str()) {
                 Some(policy) => policy,
                 None => {
@@ -412,12 +421,12 @@ pub async fn proxy(
             .inc();
 
         let routing_strategy =
-            extract_nim_llm_router_params(&json).and_then(|params| params.routing_strategy);
+            extract_nim_llm_router_params(&value).and_then(|params| params.routing_strategy);
 
         let model_index = match routing_strategy {
             Some(RoutingStrategy::Manual) => {
                 ROUTING_POLICY_USAGE.with_label_values(&["manual"]).inc();
-                if let Some(nim_llm_router_params) = extract_nim_llm_router_params(&json) {
+                if let Some(nim_llm_router_params) = extract_nim_llm_router_params(&value) {
                     let model = nim_llm_router_params.model.ok_or_else(|| {
                         GatewayApiError::InvalidRequest {
                             message: "No model specified for manual routing".to_string(),
@@ -449,7 +458,7 @@ pub async fn proxy(
             Some(RoutingStrategy::Triton) => {
                 ROUTING_POLICY_USAGE.with_label_values(&["triton"]).inc();
                 let selection_start = Instant::now();
-                let threshold = extract_nim_llm_router_params(&json)
+                let threshold = extract_nim_llm_router_params(&value)
                     .and_then(|params| params.threshold)
                     .unwrap_or(0.5);
                 let triton_text = get_last_message_for_triton(&messages);
@@ -510,7 +519,7 @@ pub async fn proxy(
         info!("api_base: {:#?}", api_base);
         info!("model: {:#?}", model);
 
-        let json = remove_nim_llm_router_params(json);
+        let json = remove_nim_llm_router_params(value);
         info!("json after removing nim llm router params: {json:?}");
 
         let json = modify_model(json, model)?;
@@ -659,24 +668,53 @@ pub async fn proxy(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Llm;
-    use hyper::body::Body;
-    use hyper::Request;
+    
+    use bytes::Bytes;
     use serde_json::json;
+    use http_body_util::Full;
 
     fn create_test_config() -> RouterConfig {
         RouterConfig {
-            policies: vec![Policy {
+            server: crate::config::ServerConfig {
+                host: "0.0.0.0".to_string(),
+                port: 8084,
+                request_timeout: 60,
+                connection_pool_size: 100,
+            },
+            security: crate::config::SecurityConfig {
+                api_keys: Some(vec!["test-key".to_string()]),
+                rate_limit: None,
+            },
+            observability: crate::config::ObservabilityConfig {
+                log_level: "info".to_string(),
+                json_logging: false,
+            },
+            caching: crate::config::CachingConfig {
+                enabled: false,
+                ttl_seconds: Some(300),
+                max_size: Some(1000),
+            },
+            retry: crate::config::RetryConfig {
+                max_retries: 2,
+                initial_backoff_ms: 100,
+            },
+            circuit_breaker: crate::config::CircuitBreakerConfig {
+                enabled: false,
+                failure_threshold: 5,
+                reset_timeout_secs: 30,
+            },
+            load_balancing_strategy: "round_robin".to_string(),
+            policies: vec![crate::config::Policy {
                 name: "test_policy".to_string(),
                 url: "http://triton:8000".to_string(),
                 llms: vec![
-                    Llm {
+                    crate::config::Llm {
                         name: "Brainstroming".to_string(),
                         api_base: "https://integrate.api.nvidia.com".to_string(),
                         api_key: "test-key".to_string(),
                         model: "meta/llama-3.1-8b-instruct".to_string(),
                     },
-                    Llm {
+                    crate::config::Llm {
                         name: "Code Generation".to_string(),
                         api_base: "https://integrate.api.nvidia.com".to_string(),
                         api_key: "test-key".to_string(),
@@ -693,12 +731,13 @@ mod tests {
         let body = json!({
             "messages": [{"role": "user", "content": "Hello"}]
         });
-
+        
+        let body_bytes = Bytes::from(serde_json::to_vec(&body).unwrap());
         let req = Request::builder()
             .method("POST")
             .uri("/v1/chat/completions")
             .header("content-type", "application/json")
-            .body(Full::new(Bytes::from(serde_json::to_vec(&body).unwrap())))
+            .body(Full::new(body_bytes))
             .expect("Failed to create request");
 
         let response = proxy(req, config).await.unwrap();
@@ -717,11 +756,12 @@ mod tests {
             }
         });
 
+        let body_bytes = Bytes::from(serde_json::to_vec(&body).unwrap());
         let req = Request::builder()
             .method("POST")
             .uri("/v1/chat/completions")
             .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .body(Full::new(body_bytes))
             .expect("Failed to create request");
 
         let response = proxy(req, config).await.unwrap();
@@ -740,11 +780,12 @@ mod tests {
             }
         });
 
+        let body_bytes = Bytes::from(serde_json::to_vec(&body).unwrap());
         let req = Request::builder()
             .method("POST")
             .uri("/v1/chat/completions")
             .header("content-type", "application/json")
-            .body(hyper::Body::from(serde_json::to_vec(&body).unwrap()))
+            .body(Full::new(body_bytes))
             .expect("Failed to create request");
 
         let response = proxy(req, config).await.unwrap();

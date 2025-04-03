@@ -1,5 +1,21 @@
 <h2><img align="center" src="https://github.com/user-attachments/assets/cbe0d62f-c856-4e0b-b3ee-6184b7c4d96f">NVIDIA AI Blueprint: LLM Router</h2>
 
+## Recent Updates
+
+### Optimized NVIDIA NIM API Model Selection
+
+The LLM Router has been updated with optimized NVIDIA NIM API model selections for each task type:
+
+- **Chatbot/Dialogue**: nvidia/llama-3.3-nemotron-super-49b-v1
+- **Code Generation**: nvidia/llama-3.3-nemotron-super-49b-v1
+- **Text Generation**: meta/llama-3.1-8b-instruct
+- **Question Answering**: nvidia/nv-embedqa-mistral-7b-v2
+- **Summarization**: meta/llama-3.1-70b-instruct
+- **Classification**: nvidia/llama-3.1-nemoguard-8b-topic-control
+- **Extraction**: nvidia/nemoretriever-parse
+
+See `models.md` for detailed justifications and more information.
+
 ## Overview
 
 Ever struggled to decide which LLM to use for a specific task? In an ideal world the most accurate LLM would also be the cheapest and fastest, but in practice modern agentic AI systems have to make trade-offs between accuracy, speed, and cost.

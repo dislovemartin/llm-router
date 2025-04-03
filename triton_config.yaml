@@ -1,0 +1,49 @@
+# Triton Inference Server Configuration for LLM Router
+
+# Server settings
+http_port: 8000
+grpc_port: 8001
+metrics_port: 8002
+http_thread_count: 8
+http_timeout_microseconds: 300000000  # 300 seconds
+cache_management_mode: memory
+response_cache_byte_size: 1073741824  # 1GB
+
+# Model settings
+model_control_mode: explicit
+repository_poll_secs: 5
+strict_model_config: false
+strict_readiness: true
+exit_on_error: false
+
+# Resources
+tensorflow_gpu_memory_fraction: 0.8
+pinned_memory_pool_byte_size: 268435456  # 256MB
+cuda_memory_pool_byte_size:
+  - "0:2147483648"  # 2GB for GPU 0
+
+# Performance settings
+min_supported_compute_capability: 7.0
+backend_config:
+  - "tensorflow,version=2"
+  - "tensorrt,version=8.5"
+  - "pytorch,version=2.0"
+
+# Logging settings
+log_info: true
+log_warning: true
+log_error: true
+log_format: default
+log_verbose: false
+
+# Metrics
+allow_metrics: true
+allow_gpu_metrics: true
+metrics_interval_ms: 1000
+
+# Dynamic batching parameters
+default_max_batch_size: 16
+preferred_batch_size: [4, 8, 16]
+
+# Model Analyzer options
+model_load_thread_count: 4 

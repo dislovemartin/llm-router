@@ -73,10 +73,11 @@ The payload for the POST call to `/v1/chat/completions` should be a JSON object 
 The `router-controller` communicates with the `router-server`, which is a Triton
 Inference Server running the router models for classification. 
 
-The router-controller configuration is defined in a YAML file and includes policies,
-LLMs, and routing strategies.
+The router-controller configuration is defined in the `config.yml` file and includes policies,
+LLMs, routing strategies, service settings, security parameters, caching, retry logic,
+and observability options.
 
-We can specify multiple policies in the same `config.yaml`
+Multiple policies can be specified in the `config.yml` file.
 
 ### Routing Strategies
 Router Controller Support two different routing strategies
@@ -87,8 +88,9 @@ Router Controller Support two different routing strategies
 
 ### Example Configuration
 
-**Note**: The order of the LLMs under policies in the `config.yaml` is very important, as the router server returns a one-hot encoded vector for each classification.
+**Note**: The order of the LLMs under policies in the `config.yml` is very important, as the router server returns a one-hot encoded vector for each classification.
 
+An example snippet from `config.yml`:
 ```yaml
 policies:
   - name: "task_router"
@@ -96,94 +98,44 @@ policies:
     llms:
       - name: Brainstorming
         api_base: https://integrate.api.nvidia.com
-        api_key: 
+        api_key: ${NVIDIA_API_KEY}
         model: meta/llama-3.1-70b-instruct
       - name: Chatbot
         api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: mistralai/mixtral-8x22b-instruct-v0.1
-      - name: Classification
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: meta/llama-3.1-8b-instruct
-      - name: Closed QA
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: meta/llama-3.1-70b-instruct
-      - name: Code Generation
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: mistralai/mixtral-8x22b-instruct-v0.1
-      - name: Extraction
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: meta/llama-3.1-8b-instruct
-      - name: Open QA
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: meta/llama-3.1-70b-instruct
-      - name: Other
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: mistralai/mixtral-8x22b-instruct-v0.1
-      - name: Rewrite
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: meta/llama-3.1-8b-instruct
-      - name: Summarization
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: meta/llama-3.1-70b-instruct
-      - name: Text Generation
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: mistralai/mixtral-8x22b-instruct-v0.1
-      - name: Unknown
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: meta/llama-3.1-8b-instruct
-  - name: "complexity_router"
-    url: http://router-server:8000/v2/models/complexity_router_ensemble/infer
-    llms:
-      - name: Creativity
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: meta/llama-3.1-70b-instruct
-      - name: Reasoning
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: mistralai/mixtral-8x22b-instruct-v0.1
-      - name: Contextual-Knowledge
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: meta/llama-3.1-8b-instruct
-      - name: Few-Shot
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: meta/llama-3.1-70b-instruct
-      - name: Domain-Knowledge
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: mistralai/mixtral-8x22b-instruct-v0.1
-      - name: No-Label-Reason
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: meta/llama-3.1-8b-instruct
-      - name: Constraint
-        api_base: https://integrate.api.nvidia.com
-        api_key: 
-        model: meta/llama-3.1-8b-instruct
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/llama-3.1-nemotron-70b-instruct
+      # ... other models ...
+
+service:
+  host: "0.0.0.0"
+  port: 8084
+  # ... other service settings ...
+
+security:
+  rate_limit:
+    requests_per_second: 50
+    # ... other security settings ...
+
+# ... other sections like observability, caching, retry ...
 ```
 
-### `config.yaml` Parameters
+### `config.yml` Parameters
   * policies: A list of routing policies. Each policy defines how to route user prompts to the appropriate LLMs.
   * name: The name of the policy.
   * url: The URL of the routing model hosted in the router server.
   * llms: A list of LLMs (Large Language Models) associated with the policy.
     * name: User defined name of the LLM that you want to associate with the classification.
     * api_base: The base URL of the LLM API.
-    * api_key: The API key to access the LLM.
-    * model: The specific model to use for the LLM.
+    * api_key: The API key to access the LLM (typically via the `${NVIDIA_API_KEY}` environment variable).
+    * model: The specific model identifier to use for the LLM.
+  * service: Contains server host, port, CORS, and connection settings.
+  * security: Defines rate limiting parameters.
+  * observability: Configures logging level and format.
+  * caching: Sets cache behavior (TTL, size).
+  * retry: Defines retry attempts and backoff strategy.
+  * circuit_breaker: Configures failure thresholds and reset timeouts.
+  * load_balancing_strategy: Defines how requests are distributed if applicable (e.g., `weighted_random`).
+  * metrics: Configures the Prometheus metrics endpoint.
 
 ### Example of Order Mapping 
 
@@ -196,7 +148,7 @@ In the above example, the order of the LLMs under the `task_router` policy is cr
 * .
 * .
 
-The router-controller uses this one-hot encoded vector to route the prompt to the appropriate LLM based on the order specified in the config.yaml. Therefore, maintaining the correct order is essential for accurate routing.
+The router-controller uses this one-hot encoded vector to route the prompt to the appropriate LLM based on the order specified in the `config.yml`. Therefore, maintaining the correct order is essential for accurate routing.
 
 ### Error Types by Routing Strategy
 

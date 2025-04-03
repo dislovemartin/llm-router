@@ -13,11 +13,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Lib
+//! LLM Router Gateway API
+//! 
+//! This crate provides a gateway for routing requests to LLM providers
+//! based on selection criteria.
 
+pub mod auth;
+pub mod cache;
+pub mod circuitbreaker;
+pub mod client;
 pub mod config;
 pub mod error;
+pub mod health;
+pub mod loadbalance;
+pub mod logging;
 pub mod metrics;
+pub mod nim;
 pub mod proxy;
+pub mod ratelimit;
+pub mod retry;
 pub mod stream;
 pub mod triton;

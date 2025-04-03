@@ -1,10 +1,13 @@
 services:
 
   router-server:
-    build:
-      context: .
-      dockerfile: src/router-server/router-server.dockerfile
-    image: router-server:latest
+#    build:
+#      context: .
+#      dockerfile: src/router-server/router-server.dockerfile
+    image: nvcr.io/nvidia/tritonserver:24.01-py3
+    runtime: nvidia
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
     shm_size: 8G
     ulimits:
       memlock: -1
@@ -13,18 +16,11 @@ services:
       - ./routers/:/model_repository
     command: tritonserver --log-verbose=1 --model-repository=/model_repository
     ports:
-      - "8000:8000"
-      - "8001:8001"
-      - "8002:8002"
+      - "8010:8000"
+      - "8011:8001"
+      - "8012:8002"
     networks:
       - llm-router-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: [ "0" ]
-              capabilities: [ gpu ]
 
   app:
     build:
@@ -47,10 +43,21 @@ services:
       context: .
       dockerfile: src/router-controller/router-controller.dockerfile
     image: router-controller:latest
+    environment:
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
     ports:
-      - "8084:8084"
+      - "8085:8084"
     networks:
       - llm-router-network
+    volumes:
+      - ./src/router-controller/config.yml:/app/config.yml
+      - nim_cache:/opt/nim/.cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   prometheus:
     image: prom/prometheus:v2.35.0
@@ -117,6 +124,7 @@ services:
 
 volumes:
   grafana_data:
+  nim_cache:
 
 
 networks:

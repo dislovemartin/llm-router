@@ -1,4 +1,3 @@
-
 uv:
 	@echo "$(GREEN)Setting up UV environment...$(NC)"
 	@bash setup.sh
@@ -11,8 +10,8 @@ download:
 	else \
   		echo "NGC_CLI_API_KEY environment variable is set."; \
 	fi 
-	ngc-cli/ngc registry model download-version "nvidia/nemo/prompt-task-and-complexity-classifier:task-llm-router"
-	ngc-cli/ngc registry model download-version "nvidia/nemo/prompt-task-and-complexity-classifier:complexity-llm-router"
+	ngc-cli/ngc registry model download-version --org 0635196415394787 "nvidia/nemo/prompt-task-and-complexity-classifier:task-llm-router"
+	ngc-cli/ngc registry model download-version --org 0635196415394787 "nvidia/nemo/prompt-task-and-complexity-classifier:complexity-llm-router"
 	cp -r prompt-task-and-complexity-classifier_vtask-llm-router/* routers/
 	cp -r prompt-task-and-complexity-classifier_vcomplexity-llm-router/* routers/
 	echo "Models downloaded and stored in routers directory successfully."

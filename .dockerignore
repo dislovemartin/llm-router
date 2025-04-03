@@ -1,0 +1,30 @@
+# Ignore build artifacts
+target/
+**/target/
+
+# Ignore Git directory
+.git/
+
+# Ignore IDE/editor configuration
+.vscode/
+.idea/
+*.iml
+
+# Ignore environment files (secrets should be mounted or injected)
+.env*
+*.env
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore test data unless specifically needed in the image
+tests/
+test_data/
+
+# Ignore local dependency directories (if using vendoring, adjust)
+vendor/
+
+# Ignore documentation unless needed
+docs/
+*.md 

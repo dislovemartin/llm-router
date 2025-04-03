@@ -20,18 +20,31 @@ use hyper::body::Bytes;
 use serde_json::{json, Value};
 use std::convert::Infallible;
 use thiserror::Error;
+use std::fmt;
 
 pub trait IntoResponse {
     fn into_response(self) -> Response<BoxBody<Bytes, GatewayApiError>>;
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum ErrorSource {
     Triton,
     LlmProvider,
     Router,
     Client,
     Infrastructure,
+}
+
+impl fmt::Display for ErrorSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ErrorSource::Triton => write!(f, "triton"),
+            ErrorSource::LlmProvider => write!(f, "llm_provider"),
+            ErrorSource::Router => write!(f, "router"),
+            ErrorSource::Client => write!(f, "client"),
+            ErrorSource::Infrastructure => write!(f, "infrastructure"),
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -103,6 +116,9 @@ pub enum GatewayApiError {
 
     #[error("No policy specified in nim-llm-router params")]
     MissingPolicy,
+    
+    #[error("Other error: {message}")]
+    Other { message: String },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -111,6 +127,10 @@ pub enum ConfigError {
     MissingPolicyField { policy: String, field: String },
     #[error("Missing field '{field}' in LLM '{llm}'")]
     MissingLlmField { llm: String, field: String },
+    #[error("File error for '{path}': {error}")]
+    FileError { path: String, error: String },
+    #[error("Parse error: {message}")]
+    ParseError { message: String },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -155,8 +175,13 @@ impl GatewayApiError {
         }
     }
 
-    pub fn to_response(&self) -> Result<Response<BoxBody<Bytes, Self>>, Self> {
-        let error_response = match self {
+    pub fn to_response(&self) -> Result<Response<BoxBody<Bytes, GatewayApiError>>, GatewayApiError> {
+        let status = self.status_code();
+        let source = self.error_source();
+        let error_type = self.error_type();
+        let message = self.to_string();
+
+        let body = match self {
             Self::LlmServiceError {
                 status,
                 message,
@@ -164,12 +189,12 @@ impl GatewayApiError {
                 details,
             } => json!({
                 "error": {
-                    "type": "llm_service_error",
+                    "type": error_type,
                     "message": message,
                     "status": status.as_u16(),
                     "provider": provider,
                     "details": details,
-                    "source": "llm_provider"
+                    "source": source.to_string(),
                 }
             }),
             Self::TritonError {
@@ -178,55 +203,57 @@ impl GatewayApiError {
                 details,
             } => json!({
                 "error": {
-                    "type": "triton_error",
+                    "type": error_type,
                     "message": message,
                     "code": code,
                     "details": details,
-                    "source": "triton"
+                    "source": source.to_string(),
                 }
             }),
             Self::RoutingError {
                 message,
-                error_type,
+                error_type: _,
             } => json!({
                 "error": {
-                    "type": format!("routing_error_{:?}", error_type).to_lowercase(),
+                    "type": error_type,
                     "message": message,
-                    "status": self.status_code().as_u16(),
-                    "source": "router"
+                    "status": status.as_u16(),
+                    "source": source.to_string(),
                 }
             }),
             Self::ClientError {
                 message,
-                error_type,
+                error_type: _,
                 status,
             } => json!({
                 "error": {
                     "type": error_type,
                     "message": message,
                     "status": status.as_u16(),
-                    "source": "client"
+                    "source": source.to_string(),
                 }
             }),
             _ => json!({
                 "error": {
-                    "type": "internal_error",
-                    "message": self.to_string(),
-                    "status": self.status_code().as_u16(),
-                    "source": "infrastructure"
+                    "type": error_type,
+                    "message": message,
+                    "source": source.to_string(),
                 }
             }),
         };
 
-        let body_bytes = Bytes::from(serde_json::to_vec(&error_response)?);
-        let boxed_body = Full::from(body_bytes)
-            .map_err(|never| match never {})
-            .boxed();
+        let bytes = Bytes::from(serde_json::to_vec(&body)?);
+        let body = Full::new(bytes).map_err(|_| GatewayApiError::UnexpectedError {
+            message: "Failed to create response body".to_string(),
+        }).boxed();
 
-        Ok(Response::builder()
-            .status(self.status_code())
-            .header("Content-Type", "application/json")
-            .body(boxed_body)?)
+        Response::builder()
+            .status(status)
+            .header("content-type", "application/json")
+            .body(body)
+            .map_err(|_| GatewayApiError::UnexpectedError {
+                message: "Failed to create response".to_string(),
+            })
     }
 
     // Constructor methods
@@ -267,6 +294,33 @@ impl GatewayApiError {
             status,
             message: message.into(),
             error_type: error_type.into(),
+        }
+    }
+
+    fn error_type(&self) -> String {
+        match self {
+            GatewayApiError::TritonError { .. } => "triton_error".to_string(),
+            GatewayApiError::LlmServiceError { .. } => "llm_service_error".to_string(),
+            GatewayApiError::RoutingError { error_type, .. } => match error_type {
+                RoutingErrorType::PolicyNotFound => "routing_error_policy_not_found".to_string(),
+                RoutingErrorType::ModelNotFound => "routing_error_model_not_found".to_string(),
+                RoutingErrorType::NoRoutingStrategy => "routing_error_no_routing_strategy".to_string(),
+                RoutingErrorType::InvalidConfiguration => "routing_error_invalid_configuration".to_string(),
+                RoutingErrorType::TritonUnavailable => "routing_error_triton_unavailable".to_string(),
+            },
+            GatewayApiError::ClientError { error_type, .. } => error_type.clone(),
+            GatewayApiError::Infrastructure(_) => "infrastructure_error".to_string(),
+            GatewayApiError::Json(_) => "json_error".to_string(),
+            GatewayApiError::Io(_) => "io_error".to_string(),
+            GatewayApiError::Http(_) => "http_error".to_string(),
+            GatewayApiError::Hyper(_) => "hyper_error".to_string(),
+            GatewayApiError::InvalidRequest { .. } => "invalid_request".to_string(),
+            GatewayApiError::TritonServiceError { .. } => "triton_service_error".to_string(),
+            GatewayApiError::UnexpectedError { .. } => "unexpected_error".to_string(),
+            GatewayApiError::PolicyNotFound(_) => "policy_not_found".to_string(),
+            GatewayApiError::ModelNotFound(_) => "model_not_found".to_string(),
+            GatewayApiError::MissingPolicy => "missing_policy".to_string(),
+            GatewayApiError::Other { message } => format!("other_error: {}", message),
         }
     }
 }

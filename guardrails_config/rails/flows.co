@@ -1,0 +1,15 @@
+define flow self_check_input
+  # Placeholder for input moderation logic
+  # Example: check input against safety topics
+  # $allowed = execute self_check_input
+  # if not $allowed
+  #   bot refuse to respond
+  pass # Allow all input for now
+
+define flow self_check_output
+  # Placeholder for output moderation logic
+  # Example: check bot response against safety topics
+  # $allowed = execute self_check_output
+  # if not $allowed
+  #   bot provide alternative response
+  pass # Allow all output for now

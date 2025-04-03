@@ -1,0 +1,192 @@
+policies:
+  - name: "task_router"
+    url: http://router-server:8000/v2/models/task_router_ensemble/infer
+    llms:
+      - name: "Brainstorming"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: meta/llama-3.1-70b-instruct
+      - name: "Chatbot"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/llama-3.1-nemotron-70b-instruct
+      - name: "Classification"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/llama-3.1-nemoguard-8b-topic-control
+      - name: "Closed QA"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/nv-embedqa-mistral-7b-v2
+      - name: "Code Generation"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/llama-3.1-nemotron-70b-instruct
+      - name: "Extraction"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/nemoretriever-parse
+      - name: "Open QA"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/llama3-chatqa-1.5-8b
+      - name: "Other"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: mistralai/mixtral-8x22b-instruct-v0.1
+      - name: "Rewrite"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: meta/llama-3.1-8b-instruct
+      - name: "Summarization"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: meta/llama-3.1-70b-instruct
+      - name: "Text Generation"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/mistral-nemo-minitron-8b-base
+      - name: "Unknown"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: meta/llama-3.1-70b-instruct
+  
+  - name: "complexity_router"
+    url: http://router-server:8000/v2/models/complexity_router_ensemble/infer
+    llms:
+      - name: Creativity
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: meta/llama-3.1-70b-instruct
+      - name: Reasoning
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/llama-3.3-nemotron-super-49b-v1
+      - name: Contextual-Knowledge
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/llama3-chatqa-1.5-70b
+      - name: Few-Shot
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/llama3-chatqa-1.5-70b
+      - name: Domain-Knowledge
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/nv-embedqa-mistral-7b-v2
+      - name: No-Label-Reason
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/mistral-nemo-minitron-8b-instruct
+      - name: Constraint
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/llama-3.1-nemoguard-8b-topic-control
+
+  # --- Phase 2: Agentic Router Pilot ---
+  - name: "agentic_router"
+    agent_model:
+      api_base: https://integrate.api.nvidia.com # Or other endpoint for the agent LLM
+      api_key: ${NVIDIA_API_KEY}
+      model: meta/llama-3.1-8b-instruct      # Fast NIM to act as the agent
+
+    # Define the pool of downstream models this agent can choose from.
+    # These could mirror models from other policies or be a curated list.
+    # We include identifiers/names the agent should output.
+    available_llms:
+      - name: "Chatbot/Dialogue"
+        identifier: "nemotron-70b-chat"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/llama-3.1-nemotron-70b-instruct
+
+      - name: "Code Generation"
+        identifier: "nemotron-70b-code"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/llama-3.1-nemotron-70b-instruct
+
+      - name: "Text Generation"
+        identifier: "minitron-8b"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/mistral-nemo-minitron-8b-base
+
+      - name: "Question Answering"
+        identifier: "embedqa-mistral"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/nv-embedqa-mistral-7b-v2
+
+      - name: "Conversational QA"
+        identifier: "chatqa-llama"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/llama3-chatqa-1.5-8b
+
+      - name: "Summarization"
+        identifier: "llama-70b"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: meta/llama-3.1-70b-instruct
+
+      - name: "Classification"
+        identifier: "nemoguard-topic"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/llama-3.1-nemoguard-8b-topic-control
+
+      - name: "Extraction"
+        identifier: "nemoretriever"
+        api_base: https://integrate.api.nvidia.com
+        api_key: ${NVIDIA_API_KEY}
+        model: nvidia/nemoretriever-parse
+
+# Default policy to use if not specified in the request
+default_policy: "task_router"
+
+# Service settings
+service:
+  host: "0.0.0.0"
+  port: 8084
+  cors_origins: ["*"]
+  verbose: true
+  connection_pool_size: 100
+  request_timeout: 180
+
+# Security settings
+security:
+  rate_limit:
+    requests_per_second: 50
+    burst_size: 100
+    per_ip: true
+
+# Observability settings
+observability:
+  log_level: "info"
+  json_logging: true
+
+# Caching settings
+caching:
+  enabled: true
+  ttl_seconds: 3600
+  max_size: 5000
+
+# Retry settings
+retry:
+  max_retries: 3
+  initial_backoff_ms: 500
+
+# Circuit breaker settings
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  reset_timeout_secs: 30
+
+# Load balancing strategy (round_robin, random, weighted_random)
+load_balancing_strategy: "weighted_random"
+
+# Metrics settings
+metrics:
+  enabled: true
+  port: 9090 

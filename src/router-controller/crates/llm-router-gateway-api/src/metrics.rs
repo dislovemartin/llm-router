@@ -16,7 +16,7 @@
 use lazy_static::lazy_static;
 use prometheus::{
     register_histogram, register_histogram_vec, register_int_counter, register_int_counter_vec,
-    Histogram, HistogramVec, IntCounter, IntCounterVec,
+    register_gauge, Histogram, HistogramVec, IntCounter, IntCounterVec, Gauge,
 };
 use serde_json::Value;
 
@@ -88,6 +88,47 @@ lazy_static! {
         "Overhead latency of the proxy, calculated as overall latency minus model selection and LLM response time"
     )
     .expect("Failed to create proxy_overhead_latency histogram");
+
+    // New metrics for retries, load balancing, circuit breakers, and caching
+    pub static ref RETRY_COUNT: IntCounterVec = register_int_counter_vec!(
+        "llm_retry_count",
+        "Number of retries per LLM",
+        &["llm_name"]
+    )
+    .expect("Failed to create retry_count counter vector");
+
+    pub static ref CACHE_HIT_COUNT: IntCounter =
+        register_int_counter!("cache_hit_count", "Total number of cache hits")
+            .expect("Failed to create cache_hit_count counter");
+
+    pub static ref CACHE_MISS_COUNT: IntCounter =
+        register_int_counter!("cache_miss_count", "Total number of cache misses")
+            .expect("Failed to create cache_miss_count counter");
+
+    pub static ref CACHE_SIZE: Gauge =
+        register_gauge!("cache_size", "Current number of entries in the cache")
+            .expect("Failed to create cache_size gauge");
+
+    pub static ref CIRCUIT_BREAKER_OPEN: IntCounterVec = register_int_counter_vec!(
+        "circuit_breaker_open",
+        "Number of times circuit breaker opened per endpoint",
+        &["endpoint"]
+    )
+    .expect("Failed to create circuit_breaker_open counter vector");
+
+    pub static ref CIRCUIT_BREAKER_STATUS: IntCounterVec = register_int_counter_vec!(
+        "circuit_breaker_status",
+        "Status of circuit breakers (0=closed, 1=half-open, 2=open)",
+        &["endpoint", "status"]
+    )
+    .expect("Failed to create circuit_breaker_status counter vector");
+
+    pub static ref LOAD_BALANCER_USAGE: IntCounterVec = register_int_counter_vec!(
+        "load_balancer_usage",
+        "Number of times each instance was selected by the load balancer",
+        &["llm_name", "api_base"]
+    )
+    .expect("Failed to create load_balancer_usage counter vector");
 }
 
 pub fn track_token_usage(json: &Value, llm_name: &str) {
@@ -108,4 +149,35 @@ pub fn track_token_usage(json: &Value, llm_name: &str) {
                 .inc_by(total);
         }
     }
+}
+
+/// Track a retry for a specific LLM
+pub fn track_retry(llm_name: &str) {
+    RETRY_COUNT.with_label_values(&[llm_name]).inc();
+}
+
+/// Update circuit breaker status metrics
+pub fn update_circuit_breaker_status(endpoint: &str, status: &str) {
+    // Reset all statuses for this endpoint
+    CIRCUIT_BREAKER_STATUS.with_label_values(&[endpoint, "closed"]).reset();
+    CIRCUIT_BREAKER_STATUS.with_label_values(&[endpoint, "half-open"]).reset();
+    CIRCUIT_BREAKER_STATUS.with_label_values(&[endpoint, "open"]).reset();
+    
+    // Set the current status
+    CIRCUIT_BREAKER_STATUS.with_label_values(&[endpoint, status]).inc();
+    
+    // If newly opened, increment the open counter
+    if status == "open" {
+        CIRCUIT_BREAKER_OPEN.with_label_values(&[endpoint]).inc();
+    }
+}
+
+/// Update cache size metric
+pub fn update_cache_size(size: usize) {
+    CACHE_SIZE.set(size as f64);
+}
+
+/// Track load balancer selection
+pub fn track_load_balancer_selection(llm_name: &str, api_base: &str) {
+    LOAD_BALANCER_USAGE.with_label_values(&[llm_name, api_base]).inc();
 }

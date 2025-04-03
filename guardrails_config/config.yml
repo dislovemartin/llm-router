@@ -1,0 +1,12 @@
+instructions:
+  - type: general
+    content: |
+      The AI assistant is helpful, harmless, and polite.
+models: [] # Initially, no LLM needed within Guardrails itself
+rails:
+  input:
+    flows:
+      - self_check_input
+  output:
+    flows:
+      - self_check_output
